@@ -19,6 +19,7 @@
 #include "joystick.h"
 #include "pca9532.h"
 #include "lpc17xx_dac.h"
+#include "eeprom.h"
 
 #define NOTE_C4 261
 #define NOTE_E4 329
@@ -41,8 +42,6 @@
 
 
 static uint32_t msTicks = 0;
-static uint8_t buf[10];
-
 static void intToString(int value, uint8_t* pBuf, uint32_t len, uint32_t base)
 {
     static const char* pAscii = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -198,7 +197,7 @@ static void init_dac(void) {
     DAC_Init(LPC_DAC);
 }
 
-void play_sound(uint32_t freq, uint32_t duration_ms) {
+ static void play_sound(uint32_t freq, uint32_t duration_ms) {
     if (freq <= 0) return;
 
     uint32_t cycles = (freq * duration_ms) / 1000;
@@ -207,131 +206,94 @@ void play_sound(uint32_t freq, uint32_t duration_ms) {
 
     for (uint32_t i = 0; i < cycles; i++) {
         DAC_UpdateValue(LPC_DAC, 0);
-        for(volatile int d = 0; d < delay_val; d++);
+        for(volatile int d = 0; d < delay_val; d++) {}
 
         DAC_UpdateValue(LPC_DAC, 1023);
-        for(volatile int d = 0; d < delay_val; d++);
+        for(volatile int d = 0; d < delay_val; d++) {}
     }
 
     DAC_UpdateValue(LPC_DAC, 0);
 }
 
-void music_hit(void) {
-    play_sound(NOTE_A3, 200);
+static void music_hit(void) {
+    (void)play_sound(NOTE_A3, 200);
 }
 
-void music_miss(void) {
-    play_sound(50, 200);
+static void music_miss(void) {
+    (void)play_sound(50, 200);
 }
 
-void music_game_over(void) {
-    play_sound(NOTE_E4, 300);
-    play_sound(NOTE_C4, 300);
-    play_sound(NOTE_A3, 600);
+static void music_game_over(void) {
+    (void)play_sound(NOTE_E4, 300);
+    (void)play_sound(NOTE_C4, 300);
+    (void)play_sound(NOTE_A3, 600);
 }
 
 int main (void)
 {
-    /*
-    int32_t xoff = 0;
-    int32_t yoff = 0;
-    int32_t zoff = 0;
-
-    int32_t t = 0;
-    uint32_t lux = 0;
-    uint32_t trim = 0;
-    */
-
     int8_t x = 0;
     int8_t y = 0;
     int8_t z = 0;
 
     int32_t high_score = 0;
     uint8_t high_score_buf[10];
+    uint8_t score_buf[10];
+    static uint8_t buf[10];
 
     uint8_t arrow_state = 0;
     uint8_t joy_val = 0;
-    uint32_t start_time = 0;
     uint8_t hit = 0;
     int32_t total_score = 0;
     uint32_t game_start_time = 0;
     int32_t reaction_bonus = 0;
     uint8_t mistakes = 0;
-    uint8_t score_buf[10];
+    int32_t last_sec = -1; // Dodaj to dla naprawy migania czasu
 
     init_i2c();
     init_ssp();
     init_adc();
-
     oled_init();
     joystick_init();
     pca9532_init();
-
-    GPIO_SetDir(2, 1<<0, 1);
-    GPIO_SetDir(2, 1<<1, 1);
-
-    GPIO_SetDir(0, 1<<27, 1);
-    GPIO_SetDir(0, 1<<28, 1);
-    GPIO_SetDir(2, 1<<13, 1);
-    GPIO_SetDir(0, 1<<26, 1);
-
-    GPIO_ClearValue(0, 1<<27);
-    GPIO_ClearValue(0, 1<<28);
-    GPIO_ClearValue(2, 1<<13);
-
     init_dac();
-
     acc_init();
 
+    // Inicjalizacja PRNG szumem ADC
     ADC_StartCmd(LPC_ADC, ADC_START_NOW);
-    while (!(ADC_ChannelGetStatus(LPC_ADC, ADC_CHANNEL_0, ADC_DATA_DONE)));
+    while (!(ADC_ChannelGetStatus(LPC_ADC, ADC_CHANNEL_0, ADC_DATA_DONE)))
+    {
+        /*Wait*/
+    }
     uint32_t adc_noise = ADC_ChannelGetData(LPC_ADC, ADC_CHANNEL_0);
-    srand(adc_noise);
+    (void)srand(adc_noise);
 
-    eeprom_read((uint8_t*)&high_score, 0, 4);
+    (void)eeprom_read((uint8_t*)&high_score, 0, 4);
     if (high_score < 0 || high_score > 9999) high_score = 0;
-    /*
-    light_init();
-
-    temp_init (&getTicks);
-    */
-
 
     if (SysTick_Config(SystemCoreClock / 1000)) {
-    while (1); // Capture error
+        while (1); 
     }
 
-    /*
-    * Assume base board in zero-g position when reading first value.
-    */
-    /*
-    xoff = 0-x;
-    yoff = 0-y;
-    zoff = 64-z;*/
-
-    /*
-    light_enable();
-    light_setRange(LIGHT_RANGE_4000);
-    */
-
     oled_clearScreen(OLED_COLOR_WHITE);
-
-    /*
-    oled_putString(1,1, (uint8_t*)"Temp : ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    oled_putString(1,9, (uint8_t*)"Light : ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    oled_putString(1,17, (uint8_t*)"Trimpot: ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    oled_putString(1,25, (uint8_t*)"Acc x : ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    oled_putString(1,33, (uint8_t*)"Acc y : ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    oled_putString(1,41, (uint8_t*)"Acc z : ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-    */
-
-
     game_start_time = getTicks();
-    while(1) {
 
-      if (getTicks() - game_start_time >= 30000) {
-              mistakes = 4;
-          }
+    while(1) {
+        // NAPRAWIONO: Skasowane ukryte znaki Unicode
+        int32_t elapsed = getTicks() - game_start_time;
+        int32_t time_left = 30 - (elapsed / 1000);
+
+        if (time_left <= 0) {
+            time_left = 0;
+            mistakes = 4;
+        }
+
+        // Naprawa migania i wyswietlanie czasu
+        if (time_left != last_sec) {
+            oled_fillRect(1, 30, 25, 40, OLED_COLOR_WHITE);
+            intToString(time_left, buf, 10, 10);
+            oled_putString(1, 30, buf, 0, 1);
+            last_sec = time_left;
+        }
 
         arrow_state = rand() % 4;
         hit = 0;
@@ -347,186 +309,90 @@ int main (void)
         oled_putString(75, 55, high_score_buf, 0, 1);
 
         switch(arrow_state) {
-            case 0: // GÓRA
-                oled_putString(36, 20, (uint8_t*)" /\\ ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-                oled_putString(40, 28, (uint8_t*)" | ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-                oled_putString(40, 36, (uint8_t*)" | ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+            case 0: // GORA
+                oled_putString(36, 20, (uint8_t*)" /\\ ", 0, 1);
+                oled_putString(40, 28, (uint8_t*)" | ", 0, 1);
+                oled_putString(40, 36, (uint8_t*)" | ", 0, 1);
                 break;
             case 1: // PRAWO
-            oled_putString(40, 28, (uint8_t*)"--->", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-            break;
-            case 2: // DÓŁ
-                oled_putString(40, 28, (uint8_t*)" | ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-                oled_putString(40, 36, (uint8_t*)" | ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-                oled_putString(36, 44, (uint8_t*)" \\/ ", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
+                oled_putString(40, 28, (uint8_t*)"--->", 0, 1);
+                break;
+            case 2: // DOL
+                oled_putString(40, 28, (uint8_t*)" | ", 0, 1);
+                oled_putString(40, 36, (uint8_t*)" | ", 0, 1);
+                oled_putString(36, 44, (uint8_t*)" \\/ ", 0, 1);
                 break;
             case 3: // LEWO
-                oled_putString(40, 28, (uint8_t*)"<---", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-            break;
+                oled_putString(40, 28, (uint8_t*)"<---", 0, 1);
+                break;
+            default: break;    
         }
 
-        uint8_t move_made = 0;
         for (int i = 0; i < 100; i++) {
             joy_val = joystick_read();
-
-            if ((arrow_state == 0 && (joy_val & JOYSTICK_UP)) ||
-                (arrow_state == 1 && (joy_val & JOYSTICK_RIGHT)) ||
-                (arrow_state == 2 && (joy_val & JOYSTICK_DOWN)) ||
-                (arrow_state == 3 && (joy_val & JOYSTICK_LEFT))) {
-
+            if (((arrow_state == 0U) && ((joy_val & JOYSTICK_UP) != 0U)) ||
+            ((arrow_state == 1U) && ((joy_val & JOYSTICK_RIGHT) != 0U)) ||
+            ((arrow_state == 2U) && ((joy_val & JOYSTICK_DOWN) != 0U)) ||
+            ((arrow_state == 3U) && ((joy_val & JOYSTICK_LEFT) != 0U))) {
                 hit = 1;
                 reaction_bonus = (100 - i) / 10;
                 break;
             }
-
-
-            else if (joy_val != 0) {
-                hit = 0; // To jest pudło
-                move_made = 1;
-                break; // Kończymy pętlę natychmiast po błędzie
+            else if ((joy_val != 0U) && ((joy_val & JOYSTICK_CENTER) == 0U)) {
+                hit = 0;
+                break;
             }
             Timer0_Wait(10);
         }
 
-        /* Accelerometer */
-        /*acc_read(&x, &y, &z);
-        x = x+xoff;
-        y = y+yoff;
-        z = z+zoff; */
-
-        /* Temperature */
-        /* t = temp_read(); */
-
-        /* light */
-        /* lux = light_read(); */
-
-        /* trimpot */
-        /*ADC_StartCmd(LPC_ADC,ADC_START_NOW);
-        //Wait conversion complete
-        while (!(ADC_ChannelGetStatus(LPC_ADC,ADC_CHANNEL_0,ADC_DATA_DONE)));
-        trim = ADC_ChannelGetData(LPC_ADC,ADC_CHANNEL_0);
-
-        /* output values to OLED display
-
-        intToString(t, buf, 10, 10);
-        oled_fillRect((1+9*6),1, 80, 8, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),1, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-        intToString(lux, buf, 10, 10);
-        oled_fillRect((1+9*6),9, 80, 16, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),9, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-        intToString(trim, buf, 10, 10);
-        oled_fillRect((1+9*6),17, 80, 24, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),17, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-        intToString(x, buf, 10, 10);
-        oled_fillRect((1+9*6),25, 80, 32, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),25, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-        intToString(y, buf, 10, 10);
-        oled_fillRect((1+9*6),33, 80, 40, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),33, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-
-        intToString(z, buf, 10, 10);
-        oled_fillRect((1+9*6),41, 80, 48, OLED_COLOR_WHITE);
-        oled_putString((1+9*6),41, buf, OLED_COLOR_BLACK, OLED_COLOR_WHITE); */
+        // NAPRAWIONO: Zakomentowane bloki peryferiow
+        /* acc_read(&x, &y, &z);
+        t = temp_read();
+        lux = light_read();
+        */
 
         if (hit) {
             music_hit();
-            int32_t points_gained = 5 + reaction_bonus;
-            total_score += points_gained;
-
-            oled_putString(1, 1, (uint8_t*)"TRAFIONY!", OLED_COLOR_BLACK , OLED_COLOR_WHITE);
-
-            intToString(points_gained, buf, 10, 10);
-            oled_putString(72, 1, (uint8_t*)"+", 0, 1);
-            oled_putString(80, 1, buf, 0, 1);
-        }
-        else {
+            total_score += (5 + reaction_bonus);
+            oled_putString(1, 1, (uint8_t*)"TRAFIONY!", 0, 1);
+        } else {
             mistakes++;
             music_miss();
             total_score -= 1;
-
-            oled_putString(1, 1, (uint8_t*)"PUDLO...", OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-            oled_putString(72, 1, (uint8_t*)" -1", 0, 1);
+            oled_putString(1, 1, (uint8_t*)"PUDLO...", 0, 1);
         }
 
         switch(mistakes) {
-            case 0:
-                pca9532_setLeds(0xFFFF, 0xFFFF);
-                break;
-            case 1:
-                pca9532_setLeds(0x3F3F, 0xFFFF);
-                break;
-            case 2:
-                pca9532_setLeds(0x0F0F, 0xFFFF);
-                break;
-            case 3:
-                pca9532_setLeds(0x0303, 0xFFFF);
-                break;
+            case 0: pca9532_setLeds(0xFFFF, 0xFFFF); break;
+            case 1: pca9532_setLeds(0x3F3F, 0xFFFF); break;
+            case 2: pca9532_setLeds(0x0F0F, 0xFFFF); break;
+            case 3: pca9532_setLeds(0x0303, 0xFFFF); break;
             case 4:
                 pca9532_setLeds(0x0000, 0xFFFF);
                 music_game_over();
-
-            if (total_score > high_score) {
-                high_score = total_score;
-                eeprom_write((uint8_t*)&high_score, 0, 4);
-            }
-
-            oled_clearScreen(OLED_COLOR_WHITE);
-
-            while(1) {
-                oled_putString(22, 15, (uint8_t*)"GAME OVER!", 0, 1);
-                oled_putString(22, 30, (uint8_t*)"SCORE:", 0, 1);
-                intToString(total_score, score_buf, 10, 10);
-                oled_putString(62, 30, score_buf, 0, 1);
-                intToString(high_score, high_score_buf, 10, 10);
-                oled_putString(22, 45, (uint8_t*)"HS:", 0, 1);
-                oled_putString(62, 45, (uint8_t*)"    ", 0, 1);
-                oled_putString(62, 45, high_score_buf, 0, 1);
-
-                acc_read(&x, &y, &z);
-                if (x > 50 || x < -50 || y > 50 || y < -50) {
-                    high_score = 0;
-                    eeprom_write((uint8_t*)&high_score, 0, 4);
-                    music_miss();
-
-                    oled_fillRect(62, 35, 90, 45, OLED_COLOR_WHITE);
+                if (total_score > high_score) {
+                    high_score = total_score;
+                    (void)eeprom_write((uint8_t*)&high_score, 0, 4);
                 }
-
-                if (joystick_read() & JOYSTICK_CENTER) {
-                    total_score = 0;
-                    mistakes = 0;
-                    hit = 0;
-                    game_start_time = getTicks();
-
-                    // Przywracamy linijkę LED do stanu początkowego (wszystkie świecą)
-                    pca9532_setLeds(0xFFFF, 0xFFFF);
-
-                    oled_clearScreen(OLED_COLOR_WHITE);
-                    oled_putString(30, 30, (uint8_t*)"NOWA GRA!", 0, 1);
-                    Timer0_Wait(1000);
-
-                    break; // Wychodzi z tej pętli while(1)
+                oled_clearScreen(OLED_COLOR_WHITE);
+                while(1) {
+                    oled_putString(22, 15, (uint8_t*)"GAME OVER!", 0, 1);
+                    intToString(total_score, score_buf, 10, 10);
+                    oled_putString(22, 30, (uint8_t*)"SCORE:", 0, 1);
+                    oled_putString(62, 30, score_buf, 0, 1);
+                    
+                    if (joystick_read() & JOYSTICK_CENTER) {
+                        total_score = 0; mistakes = 0;
+                        game_start_time = getTicks();
+                        last_sec = -1;
+                        pca9532_setLeds(0xFFFF, 0xFFFF);
+                        break;
+                    }
+                    Timer0_Wait(100);
                 }
-
-                Timer0_Wait(100);
-            }
-
-            continue;
+                continue;
+            default: break;    
         }
-
         Timer0_Wait(500);
     }
-
-}
-
-void check_failed(uint8_t *file, uint32_t line)
-{
-    /* User can add his own implementation to report the file name and line number,
-    ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-
-    /* Infinite loop */
-    while(1);
 }
