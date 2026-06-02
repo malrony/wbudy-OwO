@@ -121,9 +121,6 @@ static void intToString(int value, uint8_t* pBuf, uint32_t len, uint32_t base)
             } while(local_value > 0);
         }
     }
-
-    return;
-
 }
 
 extern void SysTick_Handler(void);
@@ -491,14 +488,10 @@ int main (void)
 
 }
 
-void check_failed(uint8_t *file, uint32_t line)
+static void check_failed(uint8_t *file, uint32_t line)
 {
     (void)file;
     (void)line;
-    /* User can add his own implementation to report the file name and line number,
-    ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-
-    /* Infinite loop */
     while(1) 
     {
         
