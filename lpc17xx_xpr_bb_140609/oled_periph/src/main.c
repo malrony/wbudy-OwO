@@ -20,14 +20,12 @@
 #include "pca9532.h"
 #include "lpc17xx_dac.h"
 
-#define NOTE_C4 261
-#define NOTE_E4 329
-#define NOTE_A3 220
-
 #include "light.h"
 #include "oled.h"
 #include "temp.h"
 #include "acc.h"
+
+#ifndef __GNUC__
 
 typedef struct {
     uint8_t Portnum;
@@ -75,7 +73,9 @@ extern void eeprom_read(uint8_t *pBuffer, uint16_t addr, uint32_t len);
 extern void eeprom_write(const uint8_t *pBuffer, uint16_t addr, uint32_t len);
 extern void Timer0_Wait(uint32_t time);
 
-void play_sound(uint32_t freq, uint32_t duration_ms);
+#endif
+
+void play_sound(uint32_t duration_ms);
 void music_miss(void);
 void check_failed(uint8_t *file, uint32_t line);
 
@@ -141,8 +141,10 @@ static void init_ssp(void)
     SSP_CFG_Type SSP_ConfigStruct;
     PINSEL_CFG_Type PinCfg;
 
+    #ifndef __GNUC__
     SSP_ConfigStruct.dummy = 0U;
     (void)SSP_ConfigStruct.dummy;
+    #endif
 
     /*
     * Initialize SPI pin connect
@@ -232,35 +234,39 @@ static void init_dac(void) {
     DAC_Init(LPC_DAC);
 }
 
-void play_sound(uint32_t freq, uint32_t duration_ms) {
-    if (freq > 0U) {
-        uint32_t cycles = (freq * duration_ms) / 1000U;
-        uint32_t delay_val = 300000U / freq;
+void play_sound(uint32_t duration_ms) {
 
-        for (uint32_t i = 0; i < cycles; i++) {
-            DAC_UpdateValue(LPC_DAC, 0);
-            for(volatile int d = 0; d < (int)delay_val; d++) { }
+    static const uint8_t audio_sample[] = {
+        128, 153, 177, 199, 218, 233, 244, 251, 254, 251, 244, 233, 218, 199, 177, 153,
+        128, 103,  79,  57,  38,  23,  12,   5,   2,   5,  12,  23,  38,  57,  79, 103
+    };
 
-            DAC_UpdateValue(LPC_DAC, 1023);
-            for(volatile int d = 0; d < (int)delay_val; d++) { }
+    uint32_t start_time = getTicks();
+
+    while ((getTicks() - start_time) < duration_ms) {
+        for (uint32_t x = 0; x < sizeof(audio_sample); x++) {
+            uint32_t dac_value = ((uint32_t)audio_sample[x] << 2);
+            DAC_UpdateValue(LPC_DAC, dac_value);
+
+            for(volatile uint32_t delay = 0U; delay < 120U; delay++) {
+               (void)delay;
+            }
         }
-
-        DAC_UpdateValue(LPC_DAC, 0);
     }
 }
 
 static void music_hit(void) {
-    play_sound(NOTE_A3, 200);
+    play_sound(150);
 }
 
 void music_miss(void) {
-    play_sound(50, 200);
+    play_sound(50);
+    Timer0_Wait(50);
+    play_sound(50);
 }
 
 static void music_game_over(void) {
-    play_sound(NOTE_E4, 300);
-    play_sound(NOTE_C4, 300);
-    play_sound(NOTE_A3, 600);
+    play_sound(600);
 }
 
 int main (void)
