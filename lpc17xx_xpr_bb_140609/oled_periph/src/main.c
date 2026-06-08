@@ -20,7 +20,6 @@
 #include "pca9532.h"
 #include "lpc17xx_dac.h"
 
-#include "light.h"
 #include "oled.h"
 #include "acc.h"
 
