@@ -22,7 +22,6 @@
 
 #include "light.h"
 #include "oled.h"
-#include "temp.h"
 #include "acc.h"
 
 #ifndef __GNUC__
@@ -81,21 +80,26 @@ void check_failed(uint8_t *file, uint32_t line);
 
 static uint32_t msTicks = 0;
 
+/*!
+ * @brief    Konwertuje liczbę całkowitą na ciąg znaków (ASCII) o wybranej bazie.
+ * @param    value       Liczba całkowita do konwersji.
+ * @param    pBuf        Wskaźnik na bufor wyjściowy znaków.
+ * @param    len         Maksymalna długość bufora znaków.
+ * @param    base        Baza systemu liczbowego (np. 10 dla dziesiętnego).
+ * @returns  void
+ * @side effects: Zapisuje skonwertowane znaki bezpośrednio do bufora pBuf.
+ */
 static void intToString(int value, uint8_t* pBuf, uint32_t len, uint32_t base)
 {
     static const char* pAscii = "0123456789abcdefghijklmnopqrstuvwxyz";
     int tmpValue = value;
     int local_value = value;
 
-    // the buffer must not be null and at least have a length of 2 to handle one
-    // digit and null-terminator
-    // a valid base cannot be less than 2 or larger than 36
     if ((pBuf != NULL) && (len >= 2U) && (base >= 2U) && (base <= 36U))
     {
 
         int pos = 0;
 
-        // negative value
         if (value < 0)
         {
             tmpValue = -tmpValue;
@@ -104,7 +108,6 @@ static void intToString(int value, uint8_t* pBuf, uint32_t len, uint32_t base)
             pos++;
         }
 
-        // calculate the required length of the buffer
         do {
             pos++;
             tmpValue /= (int)base;
@@ -124,15 +127,30 @@ static void intToString(int value, uint8_t* pBuf, uint32_t len, uint32_t base)
 }
 
 extern void SysTick_Handler(void);
+/*!
+ * @brief    Obsługa przerwania systemowego od licznika czasu SysTick.
+ * @returns  void
+ * @side effects: Inkrementuje globalny licznik milisekund msTicks co 1 ms.
+ */
 extern void SysTick_Handler(void) {
     msTicks++;
 }
 
+/*!
+ * @brief    Pobiera aktualną wartość systemowego licznika milisekund.
+ * @returns  Aktualna liczba milisekund od startu programu (msTicks).
+ * @side effects: Bezpieczny odczyt wartości bez modyfikacji.
+ */
 static uint32_t getTicks(void)
 {
     return msTicks;
 }
 
+/*!
+ * @brief    Konfiguruje piny sprzętowe i uruchamia interfejs SSP1/SPI.
+ * @returns  void
+ * @side effects: Zmienia mapowanie pinów P0.7, P0.8, P0.9 na SPI oraz ustawia P2.2 jako GPIO CS.
+ */
 static void init_ssp(void)
 {
     SSP_CFG_Type SSP_ConfigStruct;
@@ -175,6 +193,11 @@ static void init_ssp(void)
 
 }
 
+/*!
+ * @brief    Konfiguruje piny sprzętowe i uruchamia magistralę I2C2.
+ * @returns  void
+ * @side effects: Zmienia funkcję pinów P0.10 oraz P0.11 na linie SDA2/SCL2 magistrali I2C.
+ */
 static void init_i2c(void)
 {
     PINSEL_CFG_Type PinCfg;
@@ -194,6 +217,11 @@ static void init_i2c(void)
     I2C_Cmd(LPC_I2C2, ENABLE);
 }
 
+/*!
+ * @brief    Konfiguruje wejście analogowe i aktywuje przetwornik ADC.
+ * @returns  void
+ * @side effects: Przypisuje pin P0.23 do funkcji wejścia kanału AD0.0 przetwornika.
+ */
 static void init_adc(void)
 {
     PINSEL_CFG_Type PinCfg;
@@ -219,6 +247,11 @@ static void init_adc(void)
 
 }
 
+/*!
+ * @brief    Inicjalizuje przetwornik DAC i ustawia wyjście audio.
+ * @returns  void
+ * @side effects: Konfiguruje pin P0.26 do pracy z DAC.
+ */
 static void init_dac(void) {
     PINSEL_CFG_Type PinCfg;
     PinCfg.Funcnum = 2;
@@ -231,6 +264,12 @@ static void init_dac(void) {
     DAC_Init(LPC_DAC);
 }
 
+/*!
+ * @brief    Generuje sygnał audio o zadanym czasie trwania poprzez pętlę próbek DAC.
+ * @param    duration_ms Długość trwania sygnału w milisekundach.
+ * @returns  void
+ * @side effects: Blokuje mikrokontroler i cyklicznie modyfikuje rejestr napięcia wyjściowego DAC.
+ */
 void play_sound(uint32_t duration_ms) {
 
     static const uint8_t audio_sample[] = {
@@ -252,20 +291,40 @@ void play_sound(uint32_t duration_ms) {
     }
 }
 
+/*!
+ * @brief    Odtwarza powiadomienie dźwiękowe po udanym trafieniu strzałki.
+ * @returns  void
+ * @side effects: Generuje jednotonową falę dźwiękową przez okres 150 ms na wyjściu DAC.
+ */
 static void music_hit(void) {
     play_sound(150);
 }
 
-void music_miss(void) {
+/*!
+ * @brief    Odtwarza sekwencję tonów dla chybienia (pudła) w grze.
+ * @returns  void
+ * @side effects: Wywołuje podwójny sygnał audio rozdzielony pauzą generowaną przez Timer0.
+ */
+static void music_miss(void) {
     play_sound(50);
     Timer0_Wait(50);
     play_sound(50);
 }
 
+/*!
+ * @brief    Odtwarza sygnał dźwiękowy zakończenia rozgrywki (Game Over).
+ * @returns  void
+ * @side effects: Emituje ciągły dźwięk przez czas 600 ms, wstrzymując pętlę główną.
+ */
 static void music_game_over(void) {
     play_sound(600);
 }
 
+/*!
+ * @brief    Główna funkcja programu realizująca logikę gry zręcznościowej.
+ * @returns  Status wyjściowy programu (int).
+ * @side effects: Steruje wszystkimi peryferiami płyty bazowej w nieskończonej pętli.
+ */
 int main (void)
 {
 
@@ -488,6 +547,13 @@ int main (void)
 
 }
 
+/*!
+ * @brief    Obsługa awaryjna błędów asercji parametrów w bibliotekach sterowników NXP.
+ * @param    file Nazwa pliku źródłowego, w którym wystąpił błąd parametru.
+ * @param    line Numer linii kodu, w której wykryto nieprawidłowość.
+ * @returns  void
+ * @side effects: Blokuje całkowicie działanie mikrokontrolera w pętli nieskończonej.
+ */
 void check_failed(uint8_t *file, uint32_t line)
 {
     (void)file;
