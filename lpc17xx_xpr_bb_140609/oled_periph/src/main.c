@@ -304,7 +304,7 @@ static void music_hit(void) {
  * @returns  void
  * @side effects: Wywołuje podwójny sygnał audio rozdzielony pauzą generowaną przez Timer0.
  */
-static void music_miss(void) {
+void music_miss(void) {
     play_sound(50);
     Timer0_Wait(50);
     play_sound(50);
